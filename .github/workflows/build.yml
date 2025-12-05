@@ -1,0 +1,35 @@
+﻿name: Build FAP
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install uFBT
+      run: |
+        python -m pip install --upgrade pip
+        pip install ufbt
+    
+    - name: Build FAP
+      run: |
+        cd applications_user/esp32_led_controller
+        ufbt
+    
+    - name: Upload FAP artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: esp32-led-controller
+        path: applications_user/esp32_led_controller/dist/*.fap
+        retention-days: 30
