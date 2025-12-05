@@ -12,8 +12,9 @@
 #define APP_NAME "ESP32 LED Control"
 #define TAG "ESP32LED"
 
-#define ESP32_IP "192.168.0.187"
-#define ESP32_PORT 1234
+// Konfiguracja ESP32 - zmień na adres IP swojego ESP32
+#define ESP32_IP "192.168.0.187"  // ZMIEŃ NA ADRES IP TWOJEGO ESP32
+#define ESP32_PORT 1234  // Port UDP
 
 typedef enum {
     EventTypeTick,
@@ -39,9 +40,11 @@ static void render_callback(Canvas* canvas, void* ctx) {
     canvas_clear(canvas);
     canvas_set_font(canvas, FontPrimary);
 
+    // Nagłówek
     canvas_draw_str(canvas, 2, 10, APP_NAME);
     canvas_draw_line(canvas, 0, 12, 128, 12);
 
+    // Status połączenia
     canvas_set_font(canvas, FontSecondary);
     canvas_draw_str(canvas, 2, 24, "ESP32 IP:");
     canvas_draw_str(canvas, 2, 34, ESP32_IP);
@@ -52,6 +55,7 @@ static void render_callback(Canvas* canvas, void* ctx) {
         canvas_draw_str(canvas, 2, 46, "Status: Disconnected");
     }
 
+    // Stan LED
     canvas_draw_str(canvas, 2, 58, "LED State:");
     if(state->led_state) {
         canvas_draw_str(canvas, 70, 58, "ON");
@@ -62,6 +66,7 @@ static void render_callback(Canvas* canvas, void* ctx) {
         canvas_draw_circle(canvas, 100, 50, 5);
     }
 
+    // Instrukcje
     canvas_set_font(canvas, FontSecondary);
     canvas_draw_str(canvas, 2, 60, "OK: Toggle LED");
     canvas_draw_str(canvas, 2, 60, "Back: Exit");
@@ -75,40 +80,56 @@ static void input_callback(InputEvent* input_event, void* ctx) {
     furi_message_queue_put(event_queue, &event, FuriWaitForever);
 }
 
-static bool send_http_request(const char* endpoint, char* response, size_t response_size) {
+// Funkcja do wysyłania komendy UDP do ESP32
+// Używa Maraudera lub alternatywnego rozwiązania
+static bool send_udp_command(const char* command, char* response, size_t response_size) {
     bool success = false;
     
-    FuriString* url = furi_string_alloc();
-    furi_string_printf(url, "http://%s:%d%s", ESP32_IP, ESP32_PORT, endpoint);
+    FURI_LOG_I(TAG, "Sending UDP command: %s to %s:%d", command, ESP32_IP, ESP32_PORT);
     
-    FURI_LOG_I(TAG, "Request URL: %s", furi_string_get_cstr(url));
+    // UWAGA: Flipper Zero nie ma natywnego UDP API
+    // Musimy użyć Maraudera lub innego rozwiązania
     
-
-    if(strstr(endpoint, "/led/toggle") != NULL) {
+    // Próba 1: Użyj Maraudera przez CLI (jeśli dostępny)
+    // To wymaga, aby Marauder był zainstalowany i skonfigurowany
+    FuriString* cmd = furi_string_alloc();
+    
+    // Przykład komendy Maraudera (może wymagać dostosowania):
+    // marauder udp_send <IP> <PORT> <MESSAGE>
+    furi_string_printf(cmd, "marauder udp_send %s %d %s", ESP32_IP, ESP32_PORT, command);
+    
+    FURI_LOG_I(TAG, "Command: %s", furi_string_get_cstr(cmd));
+    
+    // TODO: Wykonaj komendę przez system() lub Marauder API
+    // Na razie symulujemy odpowiedź, ale w rzeczywistości trzeba:
+    // 1. Połączyć się z WiFi przez Maraudera
+    // 2. Wysłać pakiet UDP
+    // 3. Odczytać odpowiedź
+    
+    // Symulacja odpowiedzi (do czasu implementacji rzeczywistego UDP)
+    if(strcmp(command, "TOGGLE") == 0) {
         snprintf(response, response_size, "ON");
         success = true;
-        FURI_LOG_I(TAG, "LED toggled (simulated)");
-    } else if(strstr(endpoint, "/led/state") != NULL) {
+        FURI_LOG_I(TAG, "LED toggled (simulated - UDP not implemented)");
+    } else if(strcmp(command, "STATE") == 0) {
         snprintf(response, response_size, "OFF");
         success = true;
-        FURI_LOG_I(TAG, "LED state checked (simulated)");
+        FURI_LOG_I(TAG, "LED state checked (simulated - UDP not implemented)");
     }
     
-    furi_string_free(url);
+    furi_string_free(cmd);
     return success;
-}
-
-static bool send_http_get(const char* endpoint) {
-    char response[16];
-    return send_http_request(endpoint, response, sizeof(response));
 }
 
 static void toggle_led(AppState* state) {
     FURI_LOG_I(TAG, "Toggling LED");
-
-    if(send_http_get("/led/toggle")) {
-        state->led_state = !state->led_state;
-        snprintf(state->status_message, sizeof(state->status_message), "LED toggled");
+    
+    // Wysyłanie komendy UDP do ESP32
+    char response[16];
+    if(send_udp_command("TOGGLE", response, sizeof(response))) {
+        // Aktualizuj stan na podstawie odpowiedzi
+        state->led_state = (strcmp(response, "ON") == 0);
+        snprintf(state->status_message, sizeof(state->status_message), "LED: %s", response);
         state->connected = true;
     } else {
         snprintf(state->status_message, sizeof(state->status_message), "Connection failed");
@@ -118,7 +139,7 @@ static void toggle_led(AppState* state) {
 
 static void check_led_state(AppState* state) {
     char response[16];
-    if(send_http_request("/led/state", response, sizeof(response))) {
+    if(send_udp_command("STATE", response, sizeof(response))) {
         state->led_state = (strcmp(response, "ON") == 0);
         state->connected = true;
     } else {
@@ -144,6 +165,7 @@ int32_t esp32_led_controller_app(void* p) {
     Gui* gui = furi_record_open(RECORD_GUI);
     gui_add_view_port(gui, view_port, GuiLayerFullscreen);
     
+    // Sprawdzenie stanu LED przy starcie
     check_led_state(state);
     
     FURI_LOG_I(TAG, "Application started");
@@ -174,7 +196,8 @@ int32_t esp32_led_controller_app(void* p) {
         
         view_port_update(view_port);
     }
-
+    
+    // Cleanup
     gui_remove_view_port(gui, view_port);
     view_port_free(view_port);
     furi_record_close(RECORD_GUI);
